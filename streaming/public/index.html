@@ -1,0 +1,58 @@
+<input type="file" id="fileInput">
+<button onclick="uploadFile()">Upload</button>
+<progress id="progressBar" value="0" max="100"></progress>
+<p id="status"></p>
+
+<script>
+async function uploadFile() {
+    const file = document.getElementById('fileInput').files[0];
+    if (!file) return alert('Select a file first!');
+
+    document.getElementById('status').innerText = "Generating upload URL...";
+
+    // **Step 1: Get Pre-Signed URL**
+    const res = await fetch(`http://localhost:3000/generate-url?fileName=${file.name}&fileType=${file.type}`);
+    const { uploadURL } = await res.json();
+
+    document.getElementById('status').innerText = "Uploading file...";
+
+    // **Step 2: Create a ReadableStream for Progress Tracking**
+    let uploadedSize = 0;
+
+    const stream = new ReadableStream({
+        start(controller) {
+            const reader = file.stream().getReader();
+
+            function push() {
+                reader.read().then(({ done, value }) => {
+                    if (done) {
+                        controller.close();
+                        return;
+                    }
+                    uploadedSize += value.length;
+                    const percent = (uploadedSize / file.size) * 100;
+                    document.getElementById('progressBar').value = percent;
+                    document.getElementById('status').innerText = `Uploading... ${Math.round(percent)}%`;
+                    controller.enqueue(value);
+                    push();
+                });
+            }
+            push();
+        }
+    });
+
+    // **Step 3: Upload File Using Fetch**
+    const uploadRes = await fetch(uploadURL, {
+        method: "PUT",
+        body: stream,
+        headers: { "Content-Type": file.type },
+        duplex: "half" // Required for streaming in fetch()
+    });
+
+    if (uploadRes.ok) {
+        document.getElementById('status').innerText = "✅ Upload complete!";
+    } else {
+        document.getElementById('status').innerText = "❌ Upload failed!";
+    }
+}
+</script>
